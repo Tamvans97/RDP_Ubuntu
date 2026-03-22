@@ -1,0 +1,19 @@
+name: Ubuntu 22.04 with tmate
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Update
+        run: sudo apt update
+
+      - name: Install basic tools
+        run: |
+          sudo apt install -y neofetch htop git wget curl
+
+      - name: Start tmate session
+        uses: mxschmitt/action-tmate@v3

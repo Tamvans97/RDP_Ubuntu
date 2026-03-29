@@ -1,4 +1,4 @@
-name: Build & Release Proton-Clang 13 (Ubuntu 22.04)
+name: Build Proton-Clang 13 Native AArch64 (Custom Commit b4fd512)
 
 on:
   workflow_dispatch: 
@@ -6,41 +6,41 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    permissions: # WAJIB: Biar bot GitHub bisa bikin Release
+    permissions:
       contents: write
     
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Pasang Dependencies & Cross-Compiler
+    - name: Dependencies & Cross-Compiler
       run: |
         sudo apt update
-        # Install alat pancing agar bisa build binary ARM64 di mesin Intel
         sudo apt install -y cmake ninja-build build-essential python3 git \
           gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libncurses5-dev wget
 
     - name: Clone LLVM Project
       run: |
-        git clone https://github.com/llvm/llvm-project.git --depth=1 -b llvmorg-13.0.0
-        mkdir -p install
+        git clone https://github.com/llvm/llvm-project.git llvm-project
+        cd llvm-project
+        git fetch --depth 1 origin b4fd512c36ca344a3ff69350219e8b0a67e9472a
+        git checkout FETCH_HEAD
+        mkdir -p ../install
 
-    - name: Konfigurasi & Build Native TableGen (Pancingan Intel)
+    - name: Build Native TableGen
       run: |
         cd llvm-project
         mkdir build-native && cd build-native
-        # Build versi Intel dulu cuma buat ambil tool-nya saja
         cmake -G Ninja ../llvm \
           -DCMAKE_BUILD_TYPE=Release \
           -DLLVM_TARGETS_TO_BUILD="AArch64" \
           -DLLVM_ENABLE_PROJECTS="clang"
-        ninja -j$(nproc) llvm-tblgen clang-tblgen
+        ninja llvm-tblgen clang-tblgen
 
-    - name: Konfigurasi CMake (Cross-Compile Native ARM64)
+    - name: Konfigurasi Cross-Compile (Cetak Binary ARM64)
       run: |
         cd llvm-project
-        mkdir build && cd build
-        # Sekarang kita build buat ARM64, tapi pakai Tool dari build-native tadi
+        mkdir build-cross && cd build-cross
         cmake -G Ninja ../llvm \
           -DCMAKE_BUILD_TYPE=Release \
           -DLLVM_ENABLE_PROJECTS="clang;lld;polly" \
@@ -56,40 +56,25 @@ jobs:
           -DCLANG_TABLEGEN=$(pwd)/../build-native/bin/clang-tblgen \
           -DLLVM_INCLUDE_BENCHMARKS=OFF \
           -DLLVM_ENABLE_TERMINFO=OFF \
+          -DLLVM_ENABLE_BINDINGS=OFF \
           -DLLVM_STATIC_LINK_CXX_STDLIB=ON \
-          -DCMAKE_C_FLAGS="-Wno-unused-but-set-variable -Wno-error" \
-          -DCMAKE_CXX_FLAGS="-Wno-unused-but-set-variable -Wno-error"
+          -DCMAKE_C_FLAGS="-O3 -Wno-unused-but-set-variable -Wno-error" \
+          -DCMAKE_CXX_FLAGS="-O3 -Wno-unused-but-set-variable -Wno-error" 
 
-    - name: Kompilasi LLVM Final
+    - name: Kompilasi LLVM (AArch64 Native)
       run: |
-        cd llvm-project/build
+        cd llvm-project/build-cross
         ninja -j2 install
 
-    - name: Kompres Hasil Build
+    - name: Packing
       run: |
-        # Ambil tanggal buat nama file unik
-        TAG_NAME="build-$(date +'%Y.%m.%d-%H%M')"
-        echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
-        tar -czvf proton-clang-13-aarch64.tar.gz install/
-
-    - name: Upload ke Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: proton-clang-bin
-        path: proton-clang-13-aarch64.tar.gz
-
+        tar -czvf proton-clang-13-native.tar.gz install/
+        
     - name: Create Release & Upload
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: build-${{ github.run_id }}
-        name: Proton-Clang 13 Native AArch64 (Build ${{ github.run_number }})
-        body: |
-          HASIL BUILD NATIVE ARM64 (AArch64).
-          Bisa dijalankan langsung di Termux/PRoot Ubuntu tanpa emulator.
-          Fix: -Wunused-but-set-variable
-        draft: false
-        prerelease: false
-        files: |
-          proton-clang-13-native-aarch64.tar.gz
+        tag_name: b4fd512-${{ github.run_id }}
+        name: Proton-Clang 13 Native (Commit b4fd512)
+        files: proton-clang-13-native.tar.gz
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
